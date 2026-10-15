@@ -63,3 +63,7 @@ Support de la commande AT envoyées par Le module LTE.
 Pas de support de la commande RING
 
 Gestion du powerup du module LTE
+
+## License
+
+This project is licensed under the GPL-3.0 - see the [LICENSE](LICENSE) file for details.
