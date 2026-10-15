@@ -1,4 +1,4 @@
-Code du module ESP32 WROMM N16R8 sous ESP-IDF 6.0.2 et VSCODE
+Code du module ESP32 WROOM N16R8 sous ESP-IDF 6.0.2 et VSCODE
 
 Support des commande AT envoyées par l'alamre somfy protexiom.
 
