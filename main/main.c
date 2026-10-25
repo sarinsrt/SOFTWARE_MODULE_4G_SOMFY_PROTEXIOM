@@ -395,12 +395,13 @@ void gpio_init(void)
     // Configure CHG_RST GPIO
     gpio_config_t chg_rst_conf = {
         .pin_bit_mask =  (1ULL << CHG_RST),
-        .mode = GPIO_MODE_INPUT,
+        .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&chg_rst_conf);
+    gpio_set_level(CHG_RST, 0); // Set CHG_RST low to enable the charger IC
 
     // Configure ESP_LED GPIO
     gpio_config_t esp_led_conf = {
