@@ -49,16 +49,110 @@ void handle_raw_data(uint8_t *data, size_t len) {
     // Détection de la séquence d'échappement "+++" pour quitter le mode DATA
     if (len >= 3 && memcmp(data, "+++", 3) == 0) {
         current_mode = AT_MODE_COMMAND;
-        uart_write_bytes(UART_PORT, "\r\nCLOSED\r\nOK\r\n", 13);
+        uart_write_bytes(UART_PORT, "\r\nCLOSED\r\nOK\r\n", 14);
         return;
     }
 
     // Traitement des données reçues en mode transparent
+    #ifdef DBG_MODE
     ESP_LOGI("handle_raw_data", "Données transparentes reçues (%d octets)", len);
-    
+    #endif
+
     // Une fois le traitement terminé, on valide et revient en mode AT (si besoin)
     uart_write_bytes(UART_PORT, "\r\nSEND OK\r\n", 11);
     current_mode = AT_MODE_COMMAND;
+}
+
+/* --- Suppression des accents dans le message --- */
+void remove_accents(char *str, size_t max_len) {
+    int read_idx = 0;
+    int write_idx = 0;
+    bool accent_found = false; // Indicateur de détection d'accent
+
+    while (str[read_idx] != '\0') {
+        unsigned char c1 = (unsigned char)str[read_idx];
+
+        // --- CAS 1 : Encodage UTF-8 (2 octets commençant par 0xC3) ---
+        if (c1 == 0xC3 && str[read_idx + 1] != '\0') {
+            unsigned char c2 = (unsigned char)str[read_idx + 1];
+            unsigned char replacement = 0;
+
+            switch (c2) {
+                case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA4: replacement = 'a'; break;
+                case 0xA7:                                            replacement = 'c'; break;
+                case 0xA8: case 0xA9: case 0xAA: case 0xAB:           replacement = 'e'; break;
+                case 0xAC: case 0xAD: case 0xAE: case 0xAF:           replacement = 'i'; break;
+                case 0xB1:                                            replacement = 'n'; break;
+                case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB6: replacement = 'o'; break;
+                case 0xB9: case 0xBA: case 0xBB: case 0xBC:           replacement = 'u'; break;
+                case 0xBD: case 0xBF:                                 replacement = 'y'; break;
+                
+                case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: replacement = 'A'; break;
+                case 0x87:                                            replacement = 'C'; break;
+                case 0x88: case 0x89: case 0x8A: case 0x8B:           replacement = 'E'; break;
+                case 0x8C: case 0x8D: case 0x8E: case 0x8F:           replacement = 'I'; break;
+                case 0x91:                                            replacement = 'N'; break;
+                case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: replacement = 'O'; break;
+                case 0x99: case 0x9A: case 0x9B: case 0x9C:           replacement = 'U'; break;
+                case 0x9D:                                            replacement = 'Y'; break;
+                default: break;
+            }
+
+            if (replacement != 0) {
+                str[write_idx++] = replacement;
+                read_idx += 2;
+                accent_found = true;
+                continue;
+            }
+        }
+        // --- CAS 2 : Encodage ISO-8859-1 / Windows-1252 (1 seul octet >= 0xC0) ---
+        else if (c1 >= 0xC0) {
+            unsigned char replacement = 0;
+
+            switch (c1) {
+                case 0xE0: case 0xE1: case 0xE2: case 0xE3: case 0xE4: replacement = 'a'; break;
+                case 0xE7:                                            replacement = 'c'; break;
+                case 0xE8: case 0xE9: case 0xEA: case 0xEB:           replacement = 'e'; break;
+                case 0xEC: case 0xED: case 0xEE: case 0xEF:           replacement = 'i'; break;
+                case 0xF1:                                            replacement = 'n'; break;
+                case 0xF2: case 0xF3: case 0xF4: case 0xF5: case 0xF6: replacement = 'o'; break;
+                case 0xF9: case 0xFA: case 0xFB: case 0xFC:           replacement = 'u'; break;
+                case 0xFD: case 0xFF:                                 replacement = 'y'; break;
+
+                case 0xC0: case 0xC1: case 0xC2: case 0xC3: case 0xC4: replacement = 'A'; break;
+                case 0xC7:                                            replacement = 'C'; break;
+                case 0xC8: case 0xC9: case 0xCA: case 0xCB:           replacement = 'E'; break;
+                case 0xCC: case 0xCD: case 0xCE: case 0xCF:           replacement = 'I'; break;
+                case 0xD1:                                            replacement = 'N'; break;
+                case 0xD2: case 0xD3: case 0xD4: case 0xD5: case 0xD6: replacement = 'O'; break;
+                case 0xD9: case 0xDA: case 0xDB: case 0xDC:           replacement = 'U'; break;
+                case 0xDD:                                            replacement = 'Y'; break;
+                default: break;
+            }
+
+            if (replacement != 0) {
+                str[write_idx++] = replacement;
+                read_idx += 1;
+                accent_found = true;
+                continue;
+            }
+        }
+
+        // Copie standard
+        str[write_idx++] = str[read_idx++];
+    }
+    str[write_idx] = '\0';
+
+    // Ajout sécurisé du message d'avertissement si au moins un accent a été remplacé
+    if (accent_found) {
+        const char *warning = "\r\n>attention aux accent!";
+        size_t current_len = strlen(str);
+        size_t warning_len = strlen(warning);
+
+        if (current_len + warning_len < max_len) {
+            strcat(str, warning);
+        }
+    }
 }
 
 /* --- Traitement spécifique du corps de texte du SMS --- */
@@ -80,8 +174,11 @@ void handle_sms_input(uint8_t *data, size_t len) {
             
             //uint8_t esc = 0x1B;
             //uart_write_bytes(LTE_UART_PORT_NUM, &esc, 1);
-
-            if(LTE_send_at_cmd_resp((char*)(0x1B), "OK", 2000)) {
+            //uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
+            
+            char esc_cmd[2] = { 0x1B, '\0' };
+            
+            if(LTE_send_at_cmd_resp(esc_cmd, "OK", 2000)) {
                 uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
             }
             else {
@@ -92,8 +189,12 @@ void handle_sms_input(uint8_t *data, size_t len) {
         } else if (ch == CTRL_Z) {
             // Validation et envoi du SMS sur Ctrl+Z
             sms_payload[payload_len] = '\0';
-            ESP_LOGI("handle_sms_input", "SMS envoyé à %s | Message: \"%s\"", sms_recipient, sms_payload);
 
+            // --- NETTOYAGE DES ACCENTS ---
+            remove_accents(sms_payload, sizeof(sms_payload));
+            #ifdef DBG_MODE
+            ESP_LOGI("handle_sms_input", "SMS envoyé à %s | Message: \"%s\"", sms_recipient, sms_payload);
+            #endif
             //char response[64];
             //snprintf(response, sizeof(response), "\r\n+CMGS: %d\r\nOK\r\n", mr_counter++);
             //uart_write_bytes(UART_PORT, response, strlen(response));
@@ -108,15 +209,20 @@ void handle_sms_input(uint8_t *data, size_t len) {
             int len = uart_read_bytes(LTE_UART_PORT_NUM, rx_buf, sizeof(rx_buf) - 1, pdMS_TO_TICKS(10000));
             if (len > 0) {
                 rx_buf[len] = '\0';
+                ESP_LOGI("handle_sms_input", "réponse du LTE: %s", rx_buf);
+                //ESP_LOG_BUFFER_HEX("handle_sms_input", rx_buf, len);
                 if (strstr((char *)rx_buf, "OK") != NULL) {
                     ESP_LOGI("handle_sms_input", "SMS envoyé avec succès !");                    
                     uart_write_bytes(UART_PORT, rx_buf, len);
                 }
                 else {
-                    uart_write_bytes(UART_PORT, "\r\nERROR\r\n", 9);
+                    ESP_LOGI("handle_sms_input", "SMS non envoyé !");  
+                    uart_write_bytes(UART_PORT, rx_buf, len);
                 }
             }
-
+            else {
+                    uart_write_bytes(UART_PORT, "\r\nERROR\r\n", 9);
+            }
 
             payload_len = 0;
             current_mode = AT_MODE_COMMAND;
@@ -176,7 +282,7 @@ void handle_cmd_ccid(at_cmd_type_t type, int argc, char **argv) {
             break;
 
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "\r\nOK\r\n", 10);
+            uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
             break;
 
         case AT_TYPE_SET:
@@ -199,7 +305,7 @@ void handle_cmd_cflo(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "#CFLO: (0-2)\r\nOK\r\n", 19);
+            uart_write_bytes(UART_PORT, "#CFLO: (0-2)\r\nOK\r\n", 18);
             break;
         case AT_TYPE_READ:
             snprintf(response, sizeof(response), "#CFLO: %d\r\nOK\r\n", current_flow_ctrl);
@@ -242,7 +348,7 @@ void handle_cmd_sled(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "#SLED: (0-2),(1-100)\r\nOK\r\n", 28);
+            uart_write_bytes(UART_PORT, "#SLED: (0-2),(1-100)\r\nOK\r\n", 26);
             break;
         case AT_TYPE_READ:
             snprintf(response, sizeof(response), "#SLED: %d,%d\r\nOK\r\n", sfy_sled_mode, sfy_sled_timer);
@@ -370,7 +476,7 @@ void handle_cmd_ifc(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+IFC: (0-2),(0-2)\r\nOK\r\n", 25);
+            uart_write_bytes(UART_PORT, "+IFC: (0-2),(0-2)\r\nOK\r\n", 23);
             break;
         case AT_TYPE_READ:
             // Lecture du mode actuel (exemple: 0 = désactivé, 1 = RTS/CTS, 2 = XON/XOFF)
@@ -466,7 +572,7 @@ void handle_cmd_csq(at_cmd_type_t type, int argc, char **argv) {
      uint32_t LTE_timeout_ms = 2000;
      switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+CSQ: (0-31,99),(0-7,99)\r\nOK\r\n", 31);
+            uart_write_bytes(UART_PORT, "+CSQ: (0-31,99),(0-7,99)\r\nOK\r\n", 30);
             break;
         case AT_TYPE_READ:
         case AT_TYPE_EXEC:  
@@ -532,7 +638,7 @@ void handle_cmd_cgmr(at_cmd_type_t type, int argc, char **argv) {
                 send_error(100, "ERROR: No/Bad response from LTE module");
             }
             //version Telit GL865-DUAL
-            //uart_write_bytes(UART_PORT, "10.00.154\r\nOK\r\n", 19);
+            //uart_write_bytes(UART_PORT, "10.00.154\r\nOK\r\n", 15);
             break;
         case AT_TYPE_SET:
         default:
@@ -555,7 +661,7 @@ void handle_cmd_cpin(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+CPIN: (READY,PIN,PIN2,PUK,PH-NET-PUK)\r\nOK\r\n", 47);
+            uart_write_bytes(UART_PORT, "+CPIN: (READY,PIN,PIN2,PUK,PH-NET-PUK)\r\nOK\r\n", 44);
             break;
         case AT_TYPE_READ:
              // Renvoie le status CMEE du module LTE
@@ -603,7 +709,7 @@ void handle_cmd_cmee(at_cmd_type_t type, int argc, char **argv) {
     char buf[32];
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+CMEE: (0-2)\r\nOK\r\n", 19);
+            uart_write_bytes(UART_PORT, "+CMEE: (0-2)\r\nOK\r\n", 18);
             break;
         case AT_TYPE_READ:
             // Renvoie le status CMEE du module LTE
@@ -666,7 +772,7 @@ void handle_cmd_creg(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+CREG: (0-2)\r\nOK\r\n", 19);
+            uart_write_bytes(UART_PORT, "+CREG: (0-2)\r\nOK\r\n", 18);
             break;
         case AT_TYPE_READ:
             // Renvoie le status CREG du module LTE
@@ -722,7 +828,7 @@ void handle_cmd_cops(at_cmd_type_t type, int argc, char **argv) {
     char buf[32];
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+COPS: (2,\"F-Bouygues Telecom\",\"BYTEL\",\"20820\",0),(1,\"Orange F\",\"Orange\",\"20801\",0),(1,\"F SFR\",\"SFR\",\"20810\",0),,(0,1,2,3,4),(0,1,2))\r\nOK\r\n", 75);
+            uart_write_bytes(UART_PORT, "+COPS: (2,\"F-Bouygues Telecom\",\"BYTEL\",\"20820\",0),(1,\"Orange F\",\"Orange\",\"20801\",0),(1,\"F SFR\",\"SFR\",\"20810\",0),,(0,1,2,3,4),(0,1,2))\r\nOK\r\n", 139);
             break;
         case AT_TYPE_READ:
             // Renvoie le status COPS du module LTE
@@ -760,6 +866,7 @@ void handle_cmd_cops(at_cmd_type_t type, int argc, char **argv) {
                     buf[0] = '\0';                
                     if ((n >= 0 && n <= 4)&&(m >= 0 && m <= 2)) {
                         snprintf(buf, sizeof(buf), "AT+COPS=%s,%s", argv[0], argv[1]);
+                        //snprintf(buf, sizeof(buf), "AT+COPS=3,1"); // short format alphanumeric <oper>
                         if(LTE_send_at_cmd_resp(buf, "OK", 2000)) {
                             uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
                         }
@@ -859,7 +966,7 @@ void handle_cmd_cmgs(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+CMGS: \"da\"\r\nOK\r\n", 19);
+            uart_write_bytes(UART_PORT, "+CMGS: \"da\"\r\nOK\r\n", 17);
             break;
         case AT_TYPE_SET:
             if (argc >= 1) {
@@ -877,7 +984,8 @@ void handle_cmd_cmgs(at_cmd_type_t type, int argc, char **argv) {
                 
                 //envoi de la commande au module LTE pour préparer l'envoi du SMS
                 //et attente de la réponse du module LTE (prompt '> ')
-                snprintf(buf, sizeof(buf), "AT+CMGS=\"%s\"\r\n", sms_recipient);                
+                //snprintf(buf, sizeof(buf), "AT+CMGS=\"%s\"\r\n", sms_recipient);   
+                snprintf(buf, sizeof(buf), "AT+CMGS=\"%s\"", sms_recipient);                
                 if (LTE_send_at_cmd_resp(buf, "> ", 2000)) {
                     #ifdef DBG_MODE
                     ESP_LOGI("handle_cmd_cmgs", "Module LTE prêt pour l'envoi du SMS");
@@ -918,7 +1026,7 @@ void handle_cmd_cnmi(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+CNMI: (0-2),(0-2),(0),(0),(0)\r\nOK\r\n", 37);
+            uart_write_bytes(UART_PORT, "+CNMI: (0-2),(0-2),(0),(0),(0)\r\nOK\r\n", 33);
             break;
         case AT_TYPE_READ:
             snprintf(buf, sizeof(buf), "+CNMI: %d,%d,%d,%d,%d\r\nOK\r\n",
@@ -1020,7 +1128,7 @@ void handle_cmd_cmgl(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+CMGL: (\"REC UNREAD\",\"REC READ\",\"STO UNSENT\",\"STO SENT\",\"ALL\")\r\nOK\r\n", 71);
+            uart_write_bytes(UART_PORT, "+CMGL: (\"REC UNREAD\",\"REC READ\",\"STO UNSENT\",\"STO SENT\",\"ALL\")\r\nOK\r\n", 68);
             break;
 
         case AT_TYPE_EXEC:
@@ -1068,7 +1176,7 @@ void handle_cmd_cmgl(at_cmd_type_t type, int argc, char **argv) {
                     uart_write_bytes(UART_PORT, buf, strlen(buf));
                 }
             }
-            uart_write_bytes(UART_PORT, "OK\r\n", 4);
+            uart_write_bytes(UART_PORT, "OK\r\n", 6);
             */
             break;
         }
@@ -1093,7 +1201,7 @@ void handle_cmd_cmgr(at_cmd_type_t type, int argc, char **argv) {
 
     switch (type) {
         case AT_TYPE_TEST:
-            uart_write_bytes(UART_PORT, "+CMGR: (1-50)\r\nOK\r\n", 20);
+            uart_write_bytes(UART_PORT, "+CMGR: (1-50)\r\nOK\r\n", 19);
             break;
 
         case AT_TYPE_SET:        
@@ -1234,7 +1342,7 @@ void handle_cmd_cmgd(at_cmd_type_t type, int argc, char **argv) {
                 if (delflag == 0 && !deleted_any) {
                     send_error(321, "invalid memory index");
                 } else {
-                    uart_write_bytes(UART_PORT, "OK\r\n", 4);
+                    uart_write_bytes(UART_PORT, "OK\r\n", 6);
                 }
             } else {
                 send_error(50, "incorrect parameters");

@@ -82,7 +82,7 @@ static void parse_at_command(char *line) {
             uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
         }
         else{
-            uart_write_bytes(UART_PORT, "\r\nERROR\r\n", 6);
+            uart_write_bytes(UART_PORT, "\r\nERROR\r\n", 9);
         }
         //double confirm
         //LTE_send_at_cmd_resp("ATE0", "OK", 2000);
@@ -150,17 +150,13 @@ static void SFY_UART_task(void *pvParameters) {
             switch (event.type) {
                 case UART_DATA:
                     uart_read_bytes(SFY_UART_PORT_NUM, rx_buf + rx_fifo_pos, event.size, portMAX_DELAY);
-                    
-                    #ifdef DBG_MODE
-                    //ESP_LOGI("SFY_UART_task", "Recv str: %s", (char *) rx_buf);
-                    ESP_LOGI("SFY_UART_task", "current_mode: %d", get_current_mode());
-                    #endif
-
+                                        
                     if (get_current_mode() == AT_MODE_COMMAND && echo_enabled) {
                         uart_write_bytes(SFY_UART_PORT_NUM, (const char *)(rx_buf + rx_fifo_pos), event.size);
                     }
-                    rx_fifo_pos += event.size;
 
+                    rx_fifo_pos += event.size;
+                    
                     // Nettoyage du premier caractère si = \n ou \r
                     if (rx_fifo_pos > 0 && (rx_buf[0] == '\r' || rx_buf[0] == '\n')) {
                         // Décalage des données d'un octet vers la gauche
@@ -169,15 +165,17 @@ static void SFY_UART_task(void *pvParameters) {
                         rx_buf[rx_fifo_pos] = '\0'; // Assure la terminaison de chaîne si c'est du texte
                     }
 
+                    #ifdef DBG_MODE
+                    ESP_LOGI("SFY_UART_task", "SFY_UART_task: rx_buf: %.*s, rx_fifo_pos: %d", (int)(rx_fifo_pos-2), (char *)rx_buf, (int)rx_fifo_pos);
+                    ESP_LOGI("SFY_UART_task", "current_mode: %d", get_current_mode());
+                    #endif
+
                     if (get_current_mode() == AT_MODE_DATA) {
                         // Mode flux binaire / transparent
                         handle_raw_data(rx_buf, rx_fifo_pos);
                         rx_fifo_pos = 0;
                     } else if (get_current_mode() == AT_MODE_SMS_TEXT) {
                         // Traitement spécifique à la saisie de message SMS
-                        #ifdef DBG_MODE
-                        ESP_LOGI("SFY_UART_task", "handle_sms_input: rx_fifo_pos %s, rx_fifo_pos %d", (char *) rx_buf, rx_fifo_pos);
-                        #endif
                         handle_sms_input(rx_buf, rx_fifo_pos);
                         rx_fifo_pos = 0;
                     } else {
@@ -225,7 +223,7 @@ static void LTE_UART_task(void *pvParameters) {
                         // Détection des notifications d'arrivée de SMS (URC: +CMTI: "ME", <index>)
                         char *cmti_ptr = strstr((char *)rx_buf, "+CMTI:");
                         // Détection des notifications d'appel (RING)
-                        char *ring_ptr = strstr((char *)rx_buf, "RING");
+                        //char *ring_ptr = strstr((char *)rx_buf, "RING");
                         if (cmti_ptr != NULL) {
                             //send notification to SFY UART
                             uart_write_bytes(SFY_UART_PORT_NUM,rx_buf,len);

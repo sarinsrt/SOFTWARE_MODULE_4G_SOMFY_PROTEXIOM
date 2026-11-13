@@ -32,7 +32,9 @@ bool LTE_send_at_cmd_resp(const char *cmd, const char *expected_resp, uint32_t t
     uart_write_bytes(LTE_UART_PORT_NUM, cmd, strlen(cmd));
     uart_write_bytes(LTE_UART_PORT_NUM, "\r\n", 2);
 
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_send_at_cmd_resp", "Send AT command: %s, waiting for: %s", cmd, expected_resp);
+    #endif
 
     // Buffer local dynamique/stack au lieu de static
     char local_buf[UART_BUF_SIZE] = {0};
@@ -54,18 +56,23 @@ bool LTE_send_at_cmd_resp(const char *cmd, const char *expected_resp, uint32_t t
         if (read_len > 0) {
             len += read_len;
             local_buf[len] = '\0';
+            #ifdef DBG_MODE
             ESP_LOGI("LTE_send_at_cmd_resp", "Received: %s", local_buf);
-
+            #endif
             // Vérifier si la réponse attendue est présente
             if (strstr(local_buf, expected_resp) != NULL) {
+                #ifdef DBG_MODE
                 ESP_LOGI("LTE_send_at_cmd_resp", "Expected response found: %s", expected_resp);
+                #endif
                 result = true;
                 break;
             }
 
             // Vérifier s'il y a une erreur
             if (strstr(local_buf, "ERROR") != NULL) {
+                #ifdef DBG_MODE
                 ESP_LOGW("LTE_send_at_cmd_resp", "Command returned ERROR");
+                #endif
                 result = false;
                 break;
             }
@@ -102,7 +109,9 @@ bool LTE_send_at_cmd(const char *cmd, char *response, size_t max_response_len, s
     uart_write_bytes(LTE_UART_PORT_NUM, cmd, strlen(cmd));
     uart_write_bytes(LTE_UART_PORT_NUM, "\r\n", 2);
 
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_send_at_cmd", "Send AT command: %s", cmd);
+    #endif
 
     char local_buf[UART_BUF_SIZE] = {0};
     uint16_t len = 0;
@@ -161,12 +170,16 @@ void LTE_power_on(void) {
     gpio_set_level(LTE_DTR, 1);
     
     // Impulsion PWRKEY pour démarrer le module (minimum 50ms pour le A7670E)
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_power_on", "Allumage du module A7670E...");
+    #endif
     gpio_set_level(LTE_PWRKEY, 0);
     vTaskDelay(pdMS_TO_TICKS(50));
     gpio_set_level(LTE_PWRKEY, 1);
     vTaskDelay(pdMS_TO_TICKS(6000)); // Temps de démarrage du modem 5-7s
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_power_on", "Module A7670E allumé.");
+    #endif
 }
 
 
@@ -174,11 +187,14 @@ void LTE_power_on(void) {
 bool LTE_send_sms(const char *phone_number, const char *message) {
     char cmd[64];
     
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_send_sms", "Envoi de SMS à %s...", phone_number);
-
+    #endif
     // Configuration en mode Texte (1)
     if (!LTE_send_at_cmd_resp("AT+CMGF=1", "OK", 1000)) {
+        #ifdef DBG_MODE
         ESP_LOGE("LTE_send_sms", "Échec de passage en mode texte");
+        #endif
         return false;
     }
 
@@ -201,12 +217,16 @@ bool LTE_send_sms(const char *phone_number, const char *message) {
     if (len > 0) {
         rx_buf[len] = '\0';
         if (strstr((char *)rx_buf, "OK") != NULL) {
+            #ifdef DBG_MODE
             ESP_LOGI("LTE_send_sms", "SMS envoyé avec succès !");
+            #endif
             return true;
         }
     }
 
+    #ifdef DBG_MODE
     ESP_LOGE("LTE_send_sms", "Erreur lors de l'envoi du SMS");
+    #endif
     return false;
 }
 
@@ -228,10 +248,14 @@ bool LTE_send_sms(const char *phone_number, const char *message) {
 
 
 bool LTE_init(void) {
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_init", "initialisation du module A7670E...");
+    #endif
 
     // 1. Synchronisation AT
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_init", "Init step 1");
+    #endif
     int retry = 0;
     while (!LTE_send_at_cmd_resp("AT", "OK", 1000) && retry < 10) {
         retry++;
@@ -240,34 +264,48 @@ bool LTE_init(void) {
     if (retry >= 10) return false;
 
     // 2. Désactivation de l'écho local pour simplifier le parsing
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_init", "Init step 2");
+    #endif
     LTE_send_at_cmd_resp("ATE0", "OK", 1000);
 
     // 2.5. Vérification de la carte SIM
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_init", "Init step 2.5");
+    #endif
     LTE_send_at_cmd_resp("AT+CPIN=\"0000\"", "READY", 3000);
     
 
     // 3. Vérification de la carte SIM
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_init", "Init step 3");
+    #endif
     if (!LTE_send_at_cmd_resp("AT+CPIN?", "READY", 3000)) {
+        #ifdef DBG_MODE
         ESP_LOGE("LTE_init", "SIM non prête ou verrouillée PIN");
+        #endif
         return false;
     }
 
     // 4. Configuration des notifications SMS (CNMI) : Alerte sur l'UART dès réception
     // mt=1 -> Notification +CMTI, mode=2 -> Flux TE
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_init", "Init step 4");
+    #endif
     LTE_send_at_cmd_resp("AT+CNMI=2,1,0,0,0", "OK", 1000);
 
     // 5. Attente de la connexion réseau (EPS / LTE)    
+    #ifdef DBG_MODE
     ESP_LOGI("LTE_init", "Init step 5");
     ESP_LOGI("LTE_init", "Attente du réseau cellulaire...");
+    #endif
     retry = 0;
     while (retry < 20) {
         if (LTE_send_at_cmd_resp("AT+CEREG?", "+CEREG: 0,1", 1000) || 
             LTE_send_at_cmd_resp("AT+CEREG?", "+CEREG: 0,5", 1000)) {
+            #ifdef DBG_MODE
             ESP_LOGI("LTE_init", "Enregistré sur le réseau 4G LTE !");
+            #endif
             return true;
         }
         retry++;
