@@ -145,7 +145,7 @@ void remove_accents(char *str, size_t max_len) {
 
     // Ajout sécurisé du message d'avertissement si au moins un accent a été remplacé
     if (accent_found) {
-        const char *warning = "\r\n>attention aux accent!";
+        const char *warning = "\r\n>attention aux accents!";
         size_t current_len = strlen(str);
         size_t warning_len = strlen(warning);
 
@@ -664,7 +664,7 @@ void handle_cmd_cpin(at_cmd_type_t type, int argc, char **argv) {
             uart_write_bytes(UART_PORT, "+CPIN: (READY,PIN,PIN2,PUK,PH-NET-PUK)\r\nOK\r\n", 44);
             break;
         case AT_TYPE_READ:
-             // Renvoie le status CMEE du module LTE
+             // Renvoie le status CPIN du module LTE
             if (LTE_send_at_cmd("AT+CPIN?", LTE_response_buf, sizeof(LTE_response_buf), &LTE_response_len, LTE_timeout_ms)) {
                 #ifdef DBG_MODE
                 ESP_LOGI("handle_cmd_cpin", "Recv str: %s, len: %d", LTE_response_buf, (int) LTE_response_len);
@@ -677,12 +677,25 @@ void handle_cmd_cpin(at_cmd_type_t type, int argc, char **argv) {
             break;
         case AT_TYPE_SET:
             if (argc >= 1) {
-                snprintf(buf, sizeof(buf), "AT+CPIN=%s", argv[0]);
-                if(LTE_send_at_cmd_resp(buf, "OK", 2000)) {
-                    uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
+                // PIN ou PUK peut être fourni, avec ou sans le second paramètre (nouveau PIN)
+                if (argc < 2) {
+                    snprintf(buf, sizeof(buf), "AT+CPIN=%s", argv[0]);
+                    if(LTE_send_at_cmd_resp(buf, "OK", 2000)) {
+                        uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
+                    }
+                    else {
+                        send_error(100, "ERROR: No/Bad response from LTE module");
+                    }
                 }
-                else {
-                    send_error(100, "ERROR: No/Bad response from LTE module");
+                // PUK fourni avec le nouveau PIN
+                else{              
+                    snprintf(buf, sizeof(buf), "AT+CPIN=%s,%s", argv[0], argv[1]);
+                    if(LTE_send_at_cmd_resp(buf, "OK", 2000)) {
+                        uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
+                    }
+                    else {
+                        send_error(100, "ERROR: No/Bad response from LTE module");
+                    }                    
                 }
             } 
             else {
@@ -836,6 +849,26 @@ void handle_cmd_cops(at_cmd_type_t type, int argc, char **argv) {
                 #ifdef DBG_MODE
                 ESP_LOGI("handle_cmd_cops", "Recv str: %s, len: %d", LTE_response_buf, (int) LTE_response_len);
                 #endif
+
+                //remplace le format '1' par '0' dans la réponse du module LTE pour le format alphanumérique
+                char *cops_ptr = strstr(LTE_response_buf, "+COPS:");
+                if (cops_ptr != NULL) {
+                    // Cherche la première virgule après "+COPS:" (celle juste avant le format '1')
+                    char *first_comma = strchr(cops_ptr, ',');
+                    if (first_comma != NULL) {
+                        // Avance après la virgule et ignore d'éventuels espaces
+                        char *format_char = first_comma + 1;
+                        while (*format_char == ' ') {
+                            format_char++;
+                        }
+
+                        // Vérifie que le caractère est bien '1' avant de le remplacer par '0'
+                        if (*format_char == '1') {
+                            *format_char = '0';
+                        }
+                    }
+                }
+
                 uart_write_bytes(UART_PORT, LTE_response_buf, LTE_response_len);  
             }
             else {
@@ -865,7 +898,11 @@ void handle_cmd_cops(at_cmd_type_t type, int argc, char **argv) {
                     int m = atoi(argv[1]);
                     buf[0] = '\0';                
                     if ((n >= 0 && n <= 4)&&(m >= 0 && m <= 2)) {
-                        snprintf(buf, sizeof(buf), "AT+COPS=%s,%s", argv[0], argv[1]);
+                        // Remplacement du format 0 par 1 pour le module LTE (bug TELIT ?)
+                        if (m == 0) {
+                            m = 1;
+                        }
+                        snprintf(buf, sizeof(buf), "AT+COPS=%s,%d", argv[0], m);
                         //snprintf(buf, sizeof(buf), "AT+COPS=3,1"); // short format alphanumeric <oper>
                         if(LTE_send_at_cmd_resp(buf, "OK", 2000)) {
                             uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6);
