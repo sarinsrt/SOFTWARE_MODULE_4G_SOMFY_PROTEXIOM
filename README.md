@@ -20,6 +20,10 @@ ATE0
 
 #SLEDSAV	// Commande pour appliquer SLED
 
+#SHDN     // Commande pour shut down software
+
+#WAKE     // Commande pour réveiller le software
+
 +IPR    	// Commande pour obtenir ou définir le débit en bauds
 
 +IFC    	// Commande pour obtenir ou définir le flux de contrôle
