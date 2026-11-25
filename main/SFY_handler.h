@@ -89,6 +89,8 @@ void handle_cmd_ccid(at_cmd_type_t type, int argc, char **argv);
 void handle_cmd_cflo(at_cmd_type_t type, int argc, char **argv);
 void handle_cmd_sled(at_cmd_type_t type, int argc, char **argv);
 void handle_cmd_sledsav(at_cmd_type_t type, int argc, char **argv);
+void handle_cmd_shdn(at_cmd_type_t type, int argc, char **argv);
+void handle_cmd_wake(at_cmd_type_t type, int argc, char **argv);
 void handle_cmd_ipr(at_cmd_type_t type, int argc, char **argv);
 void handle_cmd_ifc(at_cmd_type_t type, int argc, char **argv);
 void handle_cmd_cgsn(at_cmd_type_t type, int argc, char **argv);
@@ -112,6 +114,8 @@ static const at_command_t cmd_table[] = {
     { "#CFLO",   handle_cmd_cflo },     // Commande pour appliquer le contrôle de flux 
     { "#SLED",   handle_cmd_sled },     // Commande pour obtenir ou définir l'état de la led SLED
 	{ "#SLEDSAV", handle_cmd_sledsav }, // Commande pour appliquer SLED
+	{ "#SHDN",   handle_cmd_shdn },     // Commande pour shut down software
+    { "#WAKE",   handle_cmd_wake },     // Commande pour réveiller le software
     { "+IPR",    handle_cmd_ipr },      // Commande pour obtenir ou définir le débit en bauds
     { "+IFC",    handle_cmd_ifc },      // Commande pour obtenir ou définir le flux de contrôle
     { "+CGSN",   handle_cmd_cgsn },     // Commande pour obtenir le numéro de série du module IMEI

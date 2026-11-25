@@ -427,6 +427,69 @@ void handle_cmd_sledsav(at_cmd_type_t type, int argc, char **argv) {
     }
 }
 
+/* --- Handler AT#SHDN (Shutdown) ---
+ * Syntaxe :
+ * AT#SHDN=?     -> Test
+ * AT#SHDN       -> Exec
+ * AT#SHDN?      -> Lecture
+ */
+void handle_cmd_shdn(at_cmd_type_t type, int argc, char **argv) {
+    switch (type) {
+        case AT_TYPE_TEST:
+        case AT_TYPE_READ:
+        case AT_TYPE_EXEC:
+            uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6); // juste envoyé OK pour confirmer la commande
+            // Ajoutez ici le code pour mettre le module LTE en veille ou l'éteindre
+            // Il faut le reveiller avec la commande AT#WAKE ou aprés un reset du module
+            // Ne pas mettre en veille LESP32
+            break;
+        default:
+            send_error(3, "operation not allowed");
+            break;
+    }
+}
+
+
+/* --- Handler AT#WAKE (Wake Up) ---
+ * Syntaxe :
+ * AT#WAKE=?        -> Test (valeurs supportées)
+ * AT#WAKE?         -> Lecture
+ * AT#WAKE=<mode>   -> Écriture (0: Aucun, 1: HW RTS/CTS, 2: SW XON/XOFF)
+ */
+void handle_cmd_wake(at_cmd_type_t type, int argc, char **argv) {
+    static int current_wake_status = 0; // 0 = désactivé par défaut
+    char response[64];
+
+    switch (type) {
+        case AT_TYPE_TEST:
+            uart_write_bytes(UART_PORT, "#WAKE: (0-1)\r\nOK\r\n", 18);
+            break;
+
+        case AT_TYPE_EXEC:
+        case AT_TYPE_READ:
+            snprintf(response, sizeof(response), "#WAKE: %d\r\nOK\r\n", current_wake_status);
+            uart_write_bytes(UART_PORT, response, strlen(response));
+            break;
+        case AT_TYPE_SET:
+            if (argc >= 1) {
+                int mode = atoi(argv[0]);
+                if (mode >= 0 && mode <= 1) {
+                    current_wake_status = mode;
+                    uart_write_bytes(UART_PORT, "\r\nOK\r\n", 6); //juste envoyé OK pour confirmer la commande
+                    // Ajoutez ici le code pour réveiller le module LTE si nécessaire
+                } else {
+                    uart_write_bytes(UART_PORT, "\r\nERROR\r\n", 9);
+                }
+            } else {
+                uart_write_bytes(UART_PORT, "\r\nERROR\r\n", 9);
+            }
+            break;
+        default:
+            uart_write_bytes(UART_PORT, "\r\nERROR\r\n", 9);
+            break;
+    }
+}
+
 
 /* --- Handler AT+IPR (Baudrate UART)---
  * Syntaxe :

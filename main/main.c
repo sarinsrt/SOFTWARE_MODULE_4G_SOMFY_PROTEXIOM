@@ -321,6 +321,16 @@ static void LTE_UART_init(void)
 
 }
 
+void EXT_RESET_Control_Task(void *params)
+{
+    // Ajoutez ici le code pour réveiller le module LTE si nécessaire
+    while(true)
+    {
+        gpio_get_level(SFY_RST);
+        vTaskDelay(10/ portTICK_PERIOD_MS);
+    }
+}
+
 
 void DTR_Control_Task(void *params)
 {
@@ -436,7 +446,7 @@ void app_main(void)
     xTaskCreate(LTE_UART_task, "LTE_UART_task", TASK_STACK_SIZE, NULL, 10, NULL);
     xTaskCreate(Led_Control_Task, "Led_Control_Task", 2048, NULL, 1, NULL);
     xTaskCreate(DTR_Control_Task, "DTR_Control_Task", 2048, NULL, 1, NULL);
-
+    xTaskCreate(EXT_RESET_Control_Task, "EXT_RESET_Control_Task", 2048, NULL, 1, NULL);
     //for testing purpose, uncomment the following lines to initialize LTE and send a test SMS
     //LTE_init();
     //LTE_send_sms("+33612345678", "Test SMS depuis ESP32");
